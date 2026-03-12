@@ -1,0 +1,159 @@
+/* ─── Variables ─────────────────────────────────────────────────────────── */
+:root {
+  --blue-start: #1a9fd8;
+  --blue-end:   #0d4b72;
+  --blue-mid:   #0d6e9e;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+.gradient-header {
+  background: linear-gradient(135deg, var(--blue-start) 0%, var(--blue-end) 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.header-logo i {
+  opacity: 0.9;
+}
+
+.letter-spacing {
+  letter-spacing: 0.05em;
+}
+
+.version-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+/* ─── Nav Tabs ────────────────────────────────────────────────────────────── */
+.nav-tabs-bar {
+  background: #f0f8ff;
+  border-bottom: 2px solid var(--blue-start);
+}
+
+.nav-tabs-bar .nav-link {
+  color: var(--blue-mid);
+  border-radius: 4px 4px 0 0;
+  border: 1px solid transparent;
+  margin-bottom: -2px;
+  font-size: 0.9rem;
+}
+
+.nav-tabs-bar .nav-link:hover {
+  background: rgba(26, 159, 216, 0.1);
+  border-color: transparent;
+}
+
+.nav-tabs-bar .nav-link.active {
+  background: var(--blue-start);
+  color: #fff;
+  border-color: var(--blue-start);
+}
+
+/* ─── License banner ──────────────────────────────────────────────────────── */
+.license-banner {
+  border-left: 4px solid #198754;
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+}
+
+/* ─── Account cards ───────────────────────────────────────────────────────── */
+.account-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.source-header {
+  background: #e8f4fd;
+  border-bottom: 3px solid var(--blue-start);
+  font-weight: 700;
+  color: var(--blue-end);
+  font-size: 0.85rem;
+}
+
+.destination-header {
+  background: #fff4e6;
+  border-bottom: 3px solid #e07b00;
+  font-weight: 700;
+  color: #7a3c00;
+  font-size: 0.85rem;
+}
+
+/* ─── Status dot ──────────────────────────────────────────────────────────── */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dee2e6;
+  display: inline-block;
+  transition: background 0.3s;
+}
+
+.status-dot.ok   { background: #198754; box-shadow: 0 0 4px #198754; }
+.status-dot.fail { background: #dc3545; box-shadow: 0 0 4px #dc3545; }
+
+/* ─── Progress bar ────────────────────────────────────────────────────────── */
+.progress {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#progressBar {
+  background: linear-gradient(90deg, var(--blue-start), var(--blue-end));
+  transition: width 0.35s ease;
+  min-width: 0;
+  position: relative;
+}
+
+.progress-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* ─── Log textarea ────────────────────────────────────────────────────────── */
+.log-area {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.78rem;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  resize: vertical;
+  border-color: #444;
+  line-height: 1.5;
+}
+
+.log-area::placeholder {
+  color: #555;
+}
+
+.log-area:focus {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-color: var(--blue-start);
+  box-shadow: 0 0 0 0.2rem rgba(26, 159, 216, 0.25);
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+#btnStartSync.syncing {
+  background: #dc3545;
+  border-color: #dc3545;
+  color: #fff;
+}
+
+/* ─── Spin animation ──────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+
+/* ─── Responsive tweaks ───────────────────────────────────────────────────── */
+@media (max-width: 991px) {
+  .col-lg-4 {
+    margin-bottom: 0;
+  }
+}
