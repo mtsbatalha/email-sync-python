@@ -123,7 +123,7 @@ class ImapAccount:
     # Duplicate detection
     # ------------------------------------------------------------------
 
-    def get_existing_message_ids(self, mailbox):
+    def get_existing_message_ids(self, mailbox, batch_size=500):
         """Returns set of Message-ID strings already in destination mailbox."""
         typ, data = self.conn.select(_quote_mailbox(mailbox), readonly=True)
         if typ != 'OK':
@@ -134,17 +134,20 @@ class ImapAccount:
         uids = data[0].split()
         if not uids:
             return set()
-        uid_set = b','.join(uids)
-        typ, data = self.conn.uid('FETCH', uid_set, '(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])')
-        if typ != 'OK':
-            return set()
         existing = set()
-        for item in data:
-            if isinstance(item, tuple):
-                header = item[1].decode('utf-8', errors='replace') if isinstance(item[1], bytes) else item[1]
-                mid = _extract_message_id(header)
-                if mid:
-                    existing.add(mid)
+        # Fetch in batches to avoid "Too long argument" on large mailboxes
+        for i in range(0, len(uids), batch_size):
+            batch = uids[i:i + batch_size]
+            uid_set = b','.join(batch)
+            typ, data = self.conn.uid('FETCH', uid_set, '(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])')
+            if typ != 'OK':
+                continue
+            for item in data:
+                if isinstance(item, tuple):
+                    header = item[1].decode('utf-8', errors='replace') if isinstance(item[1], bytes) else item[1]
+                    mid = _extract_message_id(header)
+                    if mid:
+                        existing.add(mid)
         return existing
 
     # ------------------------------------------------------------------
