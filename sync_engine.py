@@ -39,31 +39,25 @@ class SyncEngine:
         total_skipped = 0
         total_errors = 0
 
-        src = ImapAccount(self.src_config)
-        dst = ImapAccount(self.dst_config)
-
         try:
-            self._log('Connecting to source ({})...'.format(self.src_config.host))
-            src.connect()
-            self._log('Connected to source.')
-
-            self._log('Connecting to destination ({})...'.format(self.dst_config.host))
-            dst.connect()
-            self._log('Connected to destination.')
-
             if all_mailboxes:
-                mailboxes = src.list_mailboxes()
+                # Use a temporary connection just to list mailboxes
+                tmp = ImapAccount(self.src_config)
+                self._log('Connecting to source ({}) to list mailboxes...'.format(self.src_config.host))
+                tmp.connect()
+                mailboxes = tmp.list_mailboxes()
+                tmp.disconnect()
                 self._log('Found {} mailbox(es) to sync.'.format(len(mailboxes)))
                 for mb in mailboxes:
                     if self._aborted:
                         break
-                    s, sk, e = self._sync_mailbox(mb, mb, src, dst)
+                    s, sk, e = self._sync_mailbox(mb, mb)
                     total_synced += s
                     total_skipped += sk
                     total_errors += e
             else:
                 dst_mb = dst_mailbox or src_mailbox
-                s, sk, e = self._sync_mailbox(src_mailbox, dst_mb, src, dst)
+                s, sk, e = self._sync_mailbox(src_mailbox, dst_mb)
                 total_synced += s
                 total_skipped += sk
                 total_errors += e
@@ -72,14 +66,6 @@ class SyncEngine:
             self._log('Fatal error: {}'.format(exc))
             total_errors += 1
         finally:
-            try:
-                src.disconnect()
-            except Exception:
-                pass
-            try:
-                dst.disconnect()
-            except Exception:
-                pass
             self._restore_sigint()
 
         return {'synced': total_synced, 'skipped': total_skipped, 'errors': total_errors}
@@ -88,117 +74,136 @@ class SyncEngine:
     # Per-mailbox sync
     # ------------------------------------------------------------------
 
-    def _sync_mailbox(self, src_mb, dst_mb, src, dst):
+    def _sync_mailbox(self, src_mb, dst_mb):
         synced = 0
         skipped = 0
         errors = 0
 
         self._log('--- Mailbox: {} -> {} ---'.format(src_mb, dst_mb))
 
-        # Ensure destination mailbox exists
+        # Fresh connections per mailbox — avoids SSL drop on long-running sessions
+        src = ImapAccount(self.src_config)
+        dst = ImapAccount(self.dst_config)
         try:
-            dst.ensure_mailbox_exists(dst_mb)
+            src.connect()
+            dst.connect()
         except Exception as e:
-            self._log('Could not create/open destination mailbox "{}": {}'.format(dst_mb, e))
+            self._log('Connection error for mailbox "{}": {}'.format(src_mb, e))
+            try: src.disconnect()
+            except Exception: pass
+            try: dst.disconnect()
+            except Exception: pass
             return synced, skipped, errors
 
-        # Get all UIDs from source
         try:
-            all_uids = src.get_uid_list(src_mb)
-        except Exception as e:
-            self._log('Could not list messages in source "{}": {}'.format(src_mb, e))
-            return synced, skipped, errors
-
-        total = len(all_uids)
-        self._log('Found {} message(s) in source mailbox "{}".'.format(total, src_mb))
-
-        if total == 0:
-            self._log('Nothing to sync in "{}".'.format(src_mb))
-            return synced, skipped, errors
-
-        # Get existing Message-IDs from destination (dedup)
-        self._log('Checking existing messages in destination "{}"...'.format(dst_mb))
-        try:
-            existing_ids = dst.get_existing_message_ids(dst_mb)
-        except Exception as e:
-            self._log('Could not read destination mailbox "{}": {}'.format(dst_mb, e))
-            existing_ids = set()
-        self._log('{} existing message(s) found in destination.'.format(len(existing_ids)))
-
-        # Build batches
-        batches = [all_uids[i:i + self.batch_size]
-                   for i in range(0, total, self.batch_size)]
-        total_batches = len(batches)
-        processed = 0
-
-        bar = ProgressBar(total, self._get_logger())
-
-        for batch_num, batch_uids in enumerate(batches, 1):
-            if self._aborted:
-                self._log('Sync aborted by user.')
-                break
-
-            # Pass 1: fetch Message-IDs to identify new messages
+            # Ensure destination mailbox exists
             try:
-                mid_map = src.fetch_message_ids(batch_uids)
+                dst.ensure_mailbox_exists(dst_mb)
             except Exception as e:
-                self._log('Error fetching headers for batch {}: {}'.format(batch_num, e))
-                processed += len(batch_uids)
-                errors += len(batch_uids)
-                bar.update(processed, synced, skipped, batch_num, total_batches)
-                continue
+                self._log('Could not create/open destination mailbox "{}": {}'.format(dst_mb, e))
+                return synced, skipped, errors
 
-            new_uids = []
-            for uid in batch_uids:
-                mid = mid_map.get(uid)
-                if mid and mid in existing_ids:
-                    skipped += 1
-                    processed += 1
-                else:
-                    new_uids.append(uid)
-
-            if not new_uids:
-                processed += len(batch_uids) - len(new_uids)
-                bar.update(processed, synced, skipped, batch_num, total_batches)
-                continue
-
-            # Pass 2: fetch full source for new messages only
+            # Get all UIDs from source
             try:
-                raw_map = src.fetch_raw_messages(new_uids)
+                all_uids = src.get_uid_list(src_mb)
             except Exception as e:
-                self._log('Error fetching messages for batch {}: {}'.format(batch_num, e))
-                processed += len(new_uids)
-                errors += len(new_uids)
-                bar.update(processed, synced, skipped, batch_num, total_batches)
-                continue
+                self._log('Could not list messages in source "{}": {}'.format(src_mb, e))
+                return synced, skipped, errors
 
-            for uid in new_uids:
-                if uid not in raw_map:
-                    errors += 1
-                    processed += 1
-                    continue
-                raw, internaldate = raw_map[uid]
+            total = len(all_uids)
+            self._log('Found {} message(s) in source mailbox "{}".'.format(total, src_mb))
+
+            if total == 0:
+                self._log('Nothing to sync in "{}".'.format(src_mb))
+                return synced, skipped, errors
+
+            # Get existing Message-IDs from destination (dedup)
+            self._log('Checking existing messages in destination "{}"...'.format(dst_mb))
+            try:
+                existing_ids = dst.get_existing_message_ids(dst_mb)
+            except Exception as e:
+                self._log('Could not read destination mailbox "{}": {}'.format(dst_mb, e))
+                existing_ids = set()
+            self._log('{} existing message(s) found in destination.'.format(len(existing_ids)))
+
+            # Build batches
+            batches = [all_uids[i:i + self.batch_size]
+                       for i in range(0, total, self.batch_size)]
+            total_batches = len(batches)
+            processed = 0
+
+            bar = ProgressBar(total, self._get_logger())
+
+            for batch_num, batch_uids in enumerate(batches, 1):
+                if self._aborted:
+                    self._log('Sync aborted by user.')
+                    break
+
+                # Pass 1: fetch Message-IDs to identify new messages
                 try:
-                    dst.append_message(dst_mb, raw, internaldate)
-                    # Track this Message-ID to avoid re-copying in subsequent batches
-                    mid = mid_map.get(uid)
-                    if mid:
-                        existing_ids.add(mid)
-                    synced += 1
+                    mid_map = src.fetch_message_ids(batch_uids)
                 except Exception as e:
-                    self._log('Error appending UID {}: {}'.format(uid, e))
-                    errors += 1
-                processed += 1
+                    self._log('Error fetching headers for batch {}: {}'.format(batch_num, e))
+                    processed += len(batch_uids)
+                    errors += len(batch_uids)
+                    bar.update(processed, synced, skipped, batch_num, total_batches)
+                    continue
 
-            bar.update(processed, synced, skipped, batch_num, total_batches)
+                new_uids = []
+                for uid in batch_uids:
+                    mid = mid_map.get(uid)
+                    if mid and mid in existing_ids:
+                        skipped += 1
+                        processed += 1
+                    else:
+                        new_uids.append(uid)
 
-        bar.finish()
-        self._log(
-            'Mailbox "{}" done. Copied: {}  Skipped: {}  Errors: {}'.format(
-                src_mb, synced, skipped, errors
+                if not new_uids:
+                    bar.update(processed, synced, skipped, batch_num, total_batches)
+                    continue
+
+                # Pass 2: fetch full source for new messages only
+                try:
+                    raw_map = src.fetch_raw_messages(new_uids)
+                except Exception as e:
+                    self._log('Error fetching messages for batch {}: {}'.format(batch_num, e))
+                    processed += len(new_uids)
+                    errors += len(new_uids)
+                    bar.update(processed, synced, skipped, batch_num, total_batches)
+                    continue
+
+                for uid in new_uids:
+                    if uid not in raw_map:
+                        errors += 1
+                        processed += 1
+                        continue
+                    raw, internaldate = raw_map[uid]
+                    try:
+                        dst.append_message(dst_mb, raw, internaldate)
+                        mid = mid_map.get(uid)
+                        if mid:
+                            existing_ids.add(mid)
+                        synced += 1
+                    except Exception as e:
+                        self._log('Error appending UID {}: {}'.format(uid, e))
+                        errors += 1
+                    processed += 1
+
+                bar.update(processed, synced, skipped, batch_num, total_batches)
+
+            bar.finish()
+            self._log(
+                'Mailbox "{}" done. Copied: {}  Skipped: {}  Errors: {}'.format(
+                    src_mb, synced, skipped, errors
+                )
             )
-        )
-        return synced, skipped, errors
+            return synced, skipped, errors
+
+        finally:
+            try: src.disconnect()
+            except Exception: pass
+            try: dst.disconnect()
+            except Exception: pass
 
     def _get_logger(self):
         """Return a Logger-compatible object that uses our log callback."""
