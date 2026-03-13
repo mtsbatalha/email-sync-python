@@ -180,13 +180,26 @@ class SyncEngine:
                     raw, internaldate = raw_map[uid]
                     try:
                         dst.append_message(dst_mb, raw, internaldate)
-                        mid = mid_map.get(uid)
-                        if mid:
-                            existing_ids.add(mid)
-                        synced += 1
                     except Exception as e:
-                        self._log('Error appending UID {}: {}'.format(uid, e))
-                        errors += 1
+                        # SSL connection may have dropped — reconnect once and retry
+                        self._log('Error appending UID {}: {} — reconnecting dst...'.format(uid, e))
+                        try:
+                            dst.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            dst.connect()
+                            dst.ensure_mailbox_exists(dst_mb)
+                            dst.append_message(dst_mb, raw, internaldate)
+                        except Exception as e2:
+                            self._log('Retry failed for UID {}: {}'.format(uid, e2))
+                            errors += 1
+                            processed += 1
+                            continue
+                    mid = mid_map.get(uid)
+                    if mid:
+                        existing_ids.add(mid)
+                    synced += 1
                     processed += 1
 
                 bar.update(processed, synced, skipped, batch_num, total_batches)
