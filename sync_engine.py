@@ -100,8 +100,17 @@ class SyncEngine:
             try:
                 dst.ensure_mailbox_exists(dst_mb)
             except Exception as e:
-                self._log('Could not create/open destination mailbox "{}": {}'.format(dst_mb, e))
-                return synced, skipped, errors
+                self._log('Could not open destination mailbox "{}": {} — reconnecting dst...'.format(dst_mb, e))
+                try:
+                    dst.disconnect()
+                except Exception:
+                    pass
+                try:
+                    dst.connect()
+                    dst.ensure_mailbox_exists(dst_mb)
+                except Exception as e2:
+                    self._log('Could not create/open destination mailbox "{}": {}'.format(dst_mb, e2))
+                    return synced, skipped, errors
 
             # Get all UIDs from source
             try:
