@@ -143,11 +143,21 @@ class SyncEngine:
                 try:
                     mid_map = src.fetch_message_ids(batch_uids)
                 except Exception as e:
-                    self._log('Error fetching headers for batch {}: {}'.format(batch_num, e))
-                    processed += len(batch_uids)
-                    errors += len(batch_uids)
-                    bar.update(processed, synced, skipped, batch_num, total_batches)
-                    continue
+                    self._log('Error fetching headers for batch {}: {} — reconnecting src...'.format(batch_num, e))
+                    try:
+                        src.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        src.connect()
+                        src.get_uid_list(src_mb)  # re-SELECT the mailbox
+                        mid_map = src.fetch_message_ids(batch_uids)
+                    except Exception as e2:
+                        self._log('Retry failed for batch {}: {}'.format(batch_num, e2))
+                        processed += len(batch_uids)
+                        errors += len(batch_uids)
+                        bar.update(processed, synced, skipped, batch_num, total_batches)
+                        continue
 
                 new_uids = []
                 for uid in batch_uids:
@@ -166,11 +176,21 @@ class SyncEngine:
                 try:
                     raw_map = src.fetch_raw_messages(new_uids)
                 except Exception as e:
-                    self._log('Error fetching messages for batch {}: {}'.format(batch_num, e))
-                    processed += len(new_uids)
-                    errors += len(new_uids)
-                    bar.update(processed, synced, skipped, batch_num, total_batches)
-                    continue
+                    self._log('Error fetching messages for batch {}: {} — reconnecting src...'.format(batch_num, e))
+                    try:
+                        src.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        src.connect()
+                        src.get_uid_list(src_mb)  # re-SELECT the mailbox
+                        raw_map = src.fetch_raw_messages(new_uids)
+                    except Exception as e2:
+                        self._log('Retry failed for batch {}: {}'.format(batch_num, e2))
+                        processed += len(new_uids)
+                        errors += len(new_uids)
+                        bar.update(processed, synced, skipped, batch_num, total_batches)
+                        continue
 
                 for uid in new_uids:
                     if uid not in raw_map:
